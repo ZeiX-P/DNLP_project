@@ -1,16 +1,14 @@
-# --- Dati e Modelli (IMPORTANTE) ---
 experiments/
 lightning_logs/
 *.ckpt
 *.bin
 *.safetensors
 
-# --- Python Cache e Ambienti ---
+
 __pycache__/
 *.pyc
 venv/
 .env
 
-# --- IDE e Sistema ---
 .vscode/
 .DS_Store
