@@ -26,24 +26,23 @@ class KWDatasetContext(Dataset):
         super().__init__()
         self.data = []
         self.tokenizer = AutoTokenizer.from_pretrained(base_model)
-        
         scorer = rouge_scorer.RougeScorer(["rouge1"], use_stemmer=True)
-
+        
         if hide_gt:
             assert example_kw_hit_threshold == 0
-
+        
         with jsonlines.open(dataset_filename) as f:
             self.raw_dataset = list(f)
-
+        
         pos_cc = 0
         neg_cc = 0
-        for idx, item in tqdm.tqdm(enumerate(self.raw_dataset), total=len(self.raw_dataset),
-                                   desc="process data"):
-            x = [0]
+        
+        for idx, item in tqdm.tqdm(enumerate(self.raw_dataset), total=len(self.raw_dataset), desc="process data"):
+            x = [self.tokenizer.bos_token_id or 0]
             y = [-100]
             example_kw_hit_cc = 0
-
             selected_keyword_strs = set()
+            
             if not hide_gt:
                 for kw in item["trunc_input_phrases"]:
                     best_rouge_f = 0
@@ -56,61 +55,64 @@ class KWDatasetContext(Dataset):
                         best_rouge_r = max(best_rouge_r, score["rouge1"].recall)
                     if best_rouge_f >= 0.6 or best_rouge_p >= 0.8 or best_rouge_r >= 0.8:
                         selected_keyword_strs.add(kw["phrase"])
-
+            
             current_text_index = 0
+            
             for kw_info in item["trunc_input_phrases"]:
                 if current_text_index < kw_info["index"]:
                     content = item["trunc_input"][current_text_index: kw_info["index"]]
                     content_tokens = self.tokenizer(content)["input_ids"][1:-1]
-                    x.extend(content_tokens)
-                    y.extend([-100] * len(content_tokens))
-                    assert len(content_tokens)
+                    if len(content_tokens):
+                        x.extend(content_tokens)
+                        y.extend([-100] * len(content_tokens))
                 else:
                     if current_text_index != 0:
                         content_tokens = self.tokenizer(" ")["input_ids"][1:-1]
-                        x.extend(content_tokens)
-                        y.extend([-100] * len(content_tokens))
-                        assert len(content_tokens)
-
+                        if len(content_tokens):
+                            x.extend(content_tokens)
+                            y.extend([-100] * len(content_tokens))
+                
                 format_kw = f"{kw_info['phrase']}"
                 input_ids = self.tokenizer(format_kw)["input_ids"][1:-1]
-
+                
                 if not hide_gt and kw_info["phrase"] in selected_keyword_strs:
                     labels = [1] * len(input_ids)
                 else:
                     labels = [0] * len(input_ids)
-
-                if labels[-1] == 1:
-                    example_kw_hit_cc += 1
-
-                assert y[-1] == -100
-                x.extend(input_ids)
-                y.extend(labels)
-                assert len(labels)
+                
+                # Only process if we have tokens
+                if len(input_ids):
+                    if labels[-1] == 1:
+                        example_kw_hit_cc += 1
+                    x.extend(input_ids)
+                    y.extend(labels)
+                
                 current_text_index = kw_info["index"] + len(kw_info["phrase"])
-
+            
             if current_text_index < len(item["trunc_input"]):
                 content = item["trunc_input"][current_text_index:]
                 content_tokens = self.tokenizer(content)["input_ids"][1:-1]
-                x.extend(content_tokens)
-                y.extend([-100] * len(content_tokens))
-
+                if len(content_tokens):
+                    x.extend(content_tokens)
+                    y.extend([-100] * len(content_tokens))
+            
             x = x[: base_model_max_length - 1]
             y = y[: base_model_max_length - 1]
-            x.extend([2])
+            
+            eos_token_id = self.tokenizer.eos_token_id or 2
+            x.extend([eos_token_id])
             y.extend([-100])
-
+            
             x = torch.tensor(x).long()
             y = torch.tensor(y).long()
-
+            
             if example_kw_hit_cc >= example_kw_hit_threshold:
                 self.data.append((x, y, idx))
                 pos_cc += torch.sum(y == 1).numpy()
                 neg_cc += torch.sum(y == 0).numpy()
-
+        
         logging.info(f"keyword ratio {pos_cc / (pos_cc + neg_cc)}")
         logging.info(f"Dataset size: {len(self.data)}")
-
     def __len__(self):
         return len(self.data)
 
