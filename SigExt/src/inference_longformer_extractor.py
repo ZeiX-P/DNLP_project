@@ -51,14 +51,14 @@ def main():
     parser.add_argument("--checkpoint_dir", required=True, type=str, help="directory of checkpoints.")
     parser.add_argument("--output_dir", required=True, type=str, help="directory to save predictions.")
     parser.add_argument(
-        "--base_model", default="allenai/longformer-base-4096", type=str, help="Backbone pre-trained model."
+        "--base_model", default="google/bigbird-roberta-base", type=str, help="Backbone pre-trained model."
     )
 
     args = parser.parse_args()
 
     best_checkpoint = find_best_checkpoint(str(pathlib.Path(args.checkpoint_dir).expanduser()))
     logging.info(f"Using f{best_checkpoint}")
-    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, base_model="allenai/longformer-base-4096")
+    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, base_model="google/bigbird-roberta-base")
 
     trainer = pl.Trainer(devices=1, accelerator="gpu")
 

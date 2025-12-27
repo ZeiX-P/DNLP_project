@@ -244,6 +244,8 @@ def create_dataset(
     else:
         dataset = load_dataset(*DATASET_NAME_MAPPER[dataset])
     tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+    print(tokenizer.bos_token_id, tokenizer.eos_token_id)
+    
 
     for split_name, num_sample in [("validation", sample_val), ("train", sample_train), ("test", sample_test)]:
         if split_name not in dataset:
@@ -280,7 +282,7 @@ def main():
     )
     parser.add_argument(
         "--tokenizer",
-        default="allenai/longformer-large-4096",
+        default="google/bigbird-roberta-base",
         type=str,
         help="Specify the HF tokenizer for truncation.",
     )

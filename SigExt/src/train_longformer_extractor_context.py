@@ -26,6 +26,7 @@ class KWDatasetContext(Dataset):
         super().__init__()
         self.data = []
         self.tokenizer = AutoTokenizer.from_pretrained(base_model)
+        
         scorer = rouge_scorer.RougeScorer(["rouge1"], use_stemmer=True)
 
         if hide_gt:
@@ -254,8 +255,9 @@ def main():
     parser.add_argument("--checkpoint_dir", required=True, type=str, help="directory to save checkpoints.")
     parser.add_argument("--seed", default=42, type=int, help="random seed for trainer.")
     parser.add_argument(
-        "--base_model", default="allenai/longformer-base-4096", type=str, help="Backbone pre-trained model."
+        "--base_model", default="google/bigbird-roberta-base", type=str, help="Backbone pre-trained model."
     )
+
     parser.add_argument("--load_ckpt", default=None, type=str, help="Pretrained ckpt.")
 
     args = parser.parse_args()
