@@ -19,8 +19,8 @@ from transformers import AutoTokenizer
 
 DATASET_NAME_MAPPER = {
     "cnn": ("cnn_dailymail", "3.0.0"),
-    "arxiv": ("scientific_papers", "arxiv"),
-    "pubmed": ("scientific_papers", "pubmed"),
+    "arxiv": ("ccdv/arxiv-summarization",),  
+    "pubmed": ("ccdv/pubmed-summarization",),
     "xsum": ("EdinburghNLP/xsum",),
     "multi_news": ("multi_news",),
     "gigaword": ("gigaword",),
@@ -204,6 +204,7 @@ def create_dataset(
     np.random.seed(seed)
     dataset_name = dataset
 
+    # --- 1. Define Processors based on Dataset Name ---
     if dataset in ["arxiv", "pubmed"]:
         input_processor, output_processor = scientific_papers_input_processor, scientific_papers_output_processor
     elif dataset in ["cnn"]:
@@ -237,19 +238,39 @@ def create_dataset(
             partial(general_output_processor, field="headline"),
         )
     else:
-        assert 0, dataset
+        assert 0, f"Dataset {dataset} not implemented"
 
+    # --- 2. Load the Dataset ---
     if dataset == "wikihow":
-        dataset = load_dataset(*DATASET_NAME_MAPPER[dataset], data_dir="./wikihow_data/")
+        dataset_obj = load_dataset(*DATASET_NAME_MAPPER[dataset], data_dir="./wikihow_data/")
+    
+    elif dataset == "xsum":
+        try:
+            print("Attempting to load 'xsum' (canonical parquet version)...")
+            dataset_obj = load_dataset("xsum", trust_remote_code=False)
+        except Exception as e:
+            print(f"Failed to load canonical xsum: {e}")
+            print("Attempting to load 'EdinburghNLP/xsum' with trust_remote_code=True...")
+            dataset_obj = load_dataset("EdinburghNLP/xsum", trust_remote_code=True)
+
+    elif dataset in ["arxiv", "pubmed"]:
+        dataset_obj = load_dataset(*DATASET_NAME_MAPPER[dataset], trust_remote_code=True)
+        
     else:
-        dataset = load_dataset(*DATASET_NAME_MAPPER[dataset])
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer)
+        dataset_obj = load_dataset(*DATASET_NAME_MAPPER[dataset], trust_remote_code=True)
+
+    # --- 3. Tokenizer and Processing ---
+    # UPDATED LINE: Added trust_remote_code=True for ModernBERT support
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer, trust_remote_code=True)
 
     for split_name, num_sample in [("validation", sample_val), ("train", sample_train), ("test", sample_test)]:
-        if split_name not in dataset:
+        if split_name not in dataset_obj:
             continue
+        
+        split_data = dataset_obj[split_name]
+        
         processed_split = process_split(
-            dataset[split_name],
+            split_data,
             num_sample,
             input_processor=input_processor,
             output_processor=output_processor,
@@ -269,8 +290,6 @@ def create_dataset(
             [item["output_length_info"] for item in processed_split],
             str(pathlib.Path(output_dir).joinpath(f"{dataset_name}_{split_name}_output_length.png")),
         )
-
-
 def main():
     parser = argparse.ArgumentParser("Preprocess data and extract keywords.")
     parser.add_argument(

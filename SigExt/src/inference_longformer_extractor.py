@@ -11,7 +11,51 @@ from torch.utils.data import DataLoader
 from train_longformer_extractor_context import KWDatasetContext, KeywordExtractorClf
 
 
+MODELS = {
+    "longformer": {
+        "name": "allenai/longformer-base-4096",
+        "max_length": 4096,
+        "needs_block_padding": False,
+        "use_explicit_mask": False,
+    },
+    "longformer_large": {
+        "name": "allenai/longformer-large-4096",
+        "max_length": 4096,
+        "needs_block_padding": False,
+        "use_explicit_mask": False,
+    },
+    "bigbird_base": {
+        "name": "google/bigbird-roberta-base",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 64,
+        "use_explicit_mask": True,
+        "num_random_blocks": 3, 
+    },
+    "bigbird_large": {
+        "name": "google/bigbird-roberta-large",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 64,
+        "use_explicit_mask": True,
+        "num_random_blocks": 3, 
+    },
+    "modernbert_large": {
+        "name": "answerdotai/ModernBERT-large",
+        "max_length": 8192,
+        "needs_block_padding": False,
+        "use_explicit_mask": False,
+    },
+}
+
+
 def find_best_checkpoint(checkpoint_dir):
+    """Find the best checkpoint or use the file directly if provided."""
+    path = pathlib.Path(checkpoint_dir).expanduser()
+
+    if path.is_file() and path.suffix == ".ckpt":
+        return str(path)
+    
     candidates = sorted(glob.glob(f"{checkpoint_dir}/lightning_logs/*/checkpoints/*.ckpt"))
 
     if not len(candidates):
@@ -23,12 +67,19 @@ def find_best_checkpoint(checkpoint_dir):
         tokens = pathlib.Path(item).stem.split("-")
         info = {}
         for tok in tokens:
-            key, value = tok.split("_")
-            info[key] = value
+            if "_" in tok:
+                parts = tok.split("_", 1)
+                if len(parts) >= 2:
+                    info[parts[0]] = parts[1]
 
-        if float(info["recall20"]) >= best_score:
+        if "recall20" in info and float(info["recall20"]) >= best_score:
             best_checkpoint = item
             best_score = float(info["recall20"])
+    
+    if best_checkpoint is None:
+        best_checkpoint = candidates[-1]
+        logging.warning(f"Using fallback checkpoint: {best_checkpoint}")
+        
     return best_checkpoint
 
 
@@ -46,42 +97,61 @@ def parse_result(raw_dataset, predicts):
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser("Run longformer inference")
-    parser.add_argument("--dataset_dir", required=True, type=str, help="directory of train and validation data.")
-    parser.add_argument("--checkpoint_dir", required=True, type=str, help="directory of checkpoints.")
-    parser.add_argument("--output_dir", required=True, type=str, help="directory to save predictions.")
+    parser = argparse.ArgumentParser("Run inference with multiple model support")
+    
     parser.add_argument(
-        "--base_model", default="allenai/longformer-base-4096", type=str, help="Backbone pre-trained model."
+        "--model",
+        required=True,
+        choices=list(MODELS.keys()),
+        help=f"Model to use for inference. Options: {list(MODELS.keys())}"
     )
+    parser.add_argument("--dataset_dir", required=True, type=str, help="Directory of train and validation data.")
+    parser.add_argument("--checkpoint_dir", required=True, type=str, help="Directory of checkpoints or path to .ckpt file.")
+    parser.add_argument("--output_dir", required=True, type=str, help="Directory to save predictions.")
 
     args = parser.parse_args()
+    
+    model_config = MODELS[args.model]
+    base_model = model_config["name"]
+    base_model_max_length = model_config["max_length"]
 
-    best_checkpoint = find_best_checkpoint(str(pathlib.Path(args.checkpoint_dir).expanduser()))
-    logging.info(f"Using f{best_checkpoint}")
-    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, base_model="allenai/longformer-base-4096")
+    best_checkpoint = find_best_checkpoint(args.checkpoint_dir)
+    logging.info(f"Using checkpoint: {best_checkpoint}")
+    logging.info(f"Using model: {base_model}")
+    
+    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, base_model=base_model)
 
-    trainer = pl.Trainer(devices=1, accelerator="gpu")
+    trainer = pl.Trainer(devices=1, accelerator="auto")
 
     dataset_dir = pathlib.Path(args.dataset_dir).expanduser()
     output_dir = pathlib.Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_class = KWDatasetContext
-
     for split in ["validation", "test"]:
-        dataset = dataset_class(
-            dataset_filename=str(dataset_dir.joinpath(f"{split}.jsonl")),
-            base_model=args.base_model,
+        split_file = dataset_dir.joinpath(f"{split}.jsonl")
+        if not split_file.exists():
+            logging.info(f"Skipping {split} split (file not found)")
+            continue
+            
+        logging.info(f"Processing {split} split...")
+        
+        dataset = KWDatasetContext(
+            dataset_filename=str(split_file),
+            base_model=base_model,
             example_kw_hit_threshold=0,
+            base_model_max_length=base_model_max_length,
             hide_gt=True,
         )
-        dataloader = DataLoader(dataset, batch_size=1, shuffle=False)
+        dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
         predicts = trainer.predict(model, dataloaders=dataloader)
 
         dataset_with_prediction = parse_result(dataset.raw_dataset, predicts)
 
-        with jsonlines.open(str(output_dir.joinpath(f"{split}.jsonl")), "w") as f:
+        output_file = output_dir.joinpath(f"{split}.jsonl")
+        with jsonlines.open(str(output_file), "w") as f:
             f.write_all(dataset_with_prediction)
+        
+        logging.info(f"Saved predictions to {output_file}")
 
 
 if __name__ == "__main__":

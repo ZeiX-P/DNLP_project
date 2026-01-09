@@ -53,3 +53,62 @@ ZS_KEYWORD_PROMPT_STR_FOR_CLAUDE = {
     "Please write a summary in about 5 sentences. "
     "Consider include the following information: <keywords>",
 }
+
+ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL = {
+    "cnn": "<s>[INST]Here is a news article:\n<text>\n\n"
+    "Please write a short summary for the article in 1-2 sentences. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely (e.g., use 'not happy' instead of 'happy'). "
+    "Do not explain your corrections or add filler text. Keep it brief.[/INST]",
+    
+    "arxiv": "<s>[INST]Here is a research paper:\n<text>\n\n"
+    "Please write a short abstract in about 3 sentences. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely (e.g., use 'did not increase'). "
+    "Do not explain your corrections. Keep it brief.[/INST]",
+    
+    "pubmed": "<s>[INST]Here is a research paper:\n<text>\n\n"
+    "Please write a short abstract in about 3 sentences. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. "
+    "Do not explain your corrections. Keep it brief.[/INST]",
+    
+    "samsum": "<s>[INST]Here is a conversation:\n<text>\n\n"
+    "Please write a short 1 sentence summary. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. "
+    "Do not explain your corrections. Keep it brief.[/INST]",
+    
+    "meetingbank": "<s>[INST]Here is a conversation:\n<text>\n\n"
+    "Please write a 2-3 sentence summary. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. "
+    "Do not explain your corrections. Keep it brief.[/INST]",
+}
+
+ZS_SELF_CORRECT_PROMPT_STR_FOR_CLAUDE = {
+    "cnn": "Here is a news article:\n<text>\n\n"
+    "Please write a summary for the article in 2-3 sentences. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. Do not explain corrections.",
+    
+    "arxiv": "Here is a research paper:\n<text>\n\n"
+    "Please write a comprehensive paper abstract section."
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. Do not explain corrections.",
+    
+    "pubmed": "Here is a research paper:\n<text>\n\n"
+    "Please write a paper abstract in around 5 sentences. "
+    "Consider include the following information: <keywords>. "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. Do not explain corrections.",
+    
+    "samsum": "Here is a conversation:\n<text>\n\n"
+    "Please write a very short 1 sentence summary. "
+    "Consider include the following information: <keywords> "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. Do not explain corrections.",
+    
+    "meetingbank": "Here is a conversation:\n<text>\n\n"
+    "Please write a summary in about 5 sentences. "
+    "Consider include the following information: <keywords> "
+    "Guideline: Ensure factuality. If a keyword is negated, adapt it concisely. Do not explain corrections.",
+}

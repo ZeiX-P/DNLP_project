@@ -20,6 +20,8 @@ from prompts import (
     ZS_NAIVE_PROMPT_STR_FOR_CLAUDE,
     ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
     ZS_KEYWORD_PROMPT_STR_FOR_CLAUDE,
+    ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
+    ZS_SELF_CORRECT_PROMPT_STR_FOR_CLAUDE
 )
 
 ZS_NAIVE_PROMPT_STR = {
@@ -31,6 +33,11 @@ ZS_NAIVE_PROMPT_STR = {
 ZS_KEYWORD_PROMPT_STR = {
     "mistral": ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
     "claude": ZS_KEYWORD_PROMPT_STR_FOR_CLAUDE,
+}
+
+ZS_SELF_CORRECT_PROMPT_STR = {
+    "mistral": ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
+    "claude": ZS_SELF_CORRECT_PROMPT_STR_FOR_CLAUDE,
 }
 
 
@@ -131,6 +138,15 @@ def get_prompt_fn(model_name, dataset, kw_strategy, kw_model_top_k, logits_thres
         return NaivePrompt(model_name, dataset)
     elif kw_strategy == "sigext_topk":
         return SegExtTopK(model_name, dataset, top_k=kw_model_top_k, logits_threshold=logits_threshold)
+    elif kw_strategy == "sigext_self_correct":
+      
+        return SegExtTopK(
+            model_name, 
+            dataset, 
+            top_k=kw_model_top_k, 
+            logits_threshold=logits_threshold,
+            customized_prompt=ZS_SELF_CORRECT_PROMPT_STR[model_name]
+        )
     else:
         raise RuntimeError("unknown kw strategy.")
 
@@ -231,7 +247,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", default="mistral", choices=["claude", "mistral"], help="llm name")
-    parser.add_argument("--kw_strategy", choices=["disable", "sigext_topk"], help="keyword strategy.")
+   
     parser.add_argument("--kw_model_top_k", default=20, type=int, help="keyword strategy.")
     parser.add_argument(
         "--dataset",
@@ -242,6 +258,7 @@ def main():
     parser.add_argument("--dataset_dir", required=True, type=str, help="directory of train and validation data.")
     parser.add_argument("--output_dir", required=True, type=str, help="directory to save experiment.")
     parser.add_argument("--inference_on_split", default="test", type=str, help="split_to_run_inference")
+    parser.add_argument("--kw_strategy", choices=["disable", "sigext_topk", "sigext_self_correct"], help="keyword strategy.")
 
     args = parser.parse_args()
 
