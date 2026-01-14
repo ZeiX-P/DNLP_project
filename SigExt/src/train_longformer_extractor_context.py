@@ -187,6 +187,15 @@ class KeywordExtractorClf(pl.LightningModule):
 
         config = AutoConfig.from_pretrained(model_config['name'], trust_remote_code=True)
         config.num_labels = 2
+
+        if "bigbird" in model_config['name'].lower():
+            if 'block_size' in model_config:
+                config.block_size = model_config['block_size']
+            if 'num_random_blocks' in model_config:
+                config.num_random_blocks = model_config['num_random_blocks']
+            logging.info(f"BigBird config: block_size={config.block_size}, "
+                        f"num_random_blocks={config.num_random_blocks}")
+
         
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
