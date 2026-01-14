@@ -46,37 +46,37 @@ MODELS = {
         "use_explicit_mask": True,
         "num_random_blocks": 3, 
     },
-    "bigbird_base_r2b64": {
-        "name": "google/bigbird-roberta-base",
+        "bigbird_large_r2b64": {
+        "name": "google/bigbird-roberta-large",
         "max_length": 4096,
         "needs_block_padding": True,
         "block_size": 64,
         "use_explicit_mask": True,
-        "num_random_blocks": 2, 
+        "num_random_blocks": 2
     },
-    "bigbird_base_r5b64": {
-        "name": "google/bigbird-roberta-base",
+    "bigbird_large_r5b64": {
+        "name": "google/bigbird-roberta-large",
         "max_length": 4096,
         "needs_block_padding": True,
         "block_size": 64,
         "use_explicit_mask": True,
-        "num_random_blocks": 5, 
+        "num_random_blocks": 5
     },
-    "bigbird_base_r3b32": {
-        "name": "google/bigbird-roberta-base",
+    "bigbird_large_r3b32": {
+        "name": "google/bigbird-roberta-large",
         "max_length": 4096,
         "needs_block_padding": True,
         "block_size": 32,
         "use_explicit_mask": True,
-        "num_random_blocks": 3, 
+        "num_random_blocks": 3
     },
-    "bigbird_base_r3b128": {
-        "name": "google/bigbird-roberta-base",
+    "bigbird_large_r3b128": {
+        "name": "google/bigbird-roberta-large",
         "max_length": 4096,
         "needs_block_padding": True,
         "block_size": 128,
         "use_explicit_mask": True,
-        "num_random_blocks": 3, 
+        "num_random_blocks": 3
     },
     "modernbert_large": {
         "name": "answerdotai/ModernBERT-large",
