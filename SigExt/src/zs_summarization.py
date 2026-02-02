@@ -4,7 +4,6 @@ import logging
 import os
 import pathlib
 from collections import defaultdict
-from multiprocessing import Pool
 
 import jsonlines
 import nltk
@@ -14,30 +13,35 @@ from nltk.tokenize import word_tokenize
 from rapidfuzz import fuzz
 from rouge_score import rouge_scorer
 
-from bedrock_utils import predict_one_eg_mistral, predict_one_eg_claude_instant
+# CHANGE 1: Import from local_model_utils instead of bedrock_utils
+from local_model_utils import (
+    predict_one_eg_mistral,
+    predict_one_eg_llama,
+    predict_one_eg_qwen,
+)
 from prompts import (
     ZS_NAIVE_PROMPT_STR_FOR_MISTRAL,
-    ZS_NAIVE_PROMPT_STR_FOR_CLAUDE,
     ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
-    ZS_KEYWORD_PROMPT_STR_FOR_CLAUDE,
-    ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
-    ZS_SELF_CORRECT_PROMPT_STR_FOR_CLAUDE
+    ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL
 )
 
+# CHANGE 2: Update prompt dictionaries to support all three models
 ZS_NAIVE_PROMPT_STR = {
-    "mixtral": ZS_NAIVE_PROMPT_STR_FOR_MISTRAL,
-    "claude": ZS_NAIVE_PROMPT_STR_FOR_CLAUDE,
+    "mistral": ZS_NAIVE_PROMPT_STR_FOR_MISTRAL,
+    "llama": ZS_NAIVE_PROMPT_STR_FOR_MISTRAL,  # Reuse Mistral prompts
+    "qwen": ZS_NAIVE_PROMPT_STR_FOR_MISTRAL,   # Reuse Mistral prompts
 }
-
 
 ZS_KEYWORD_PROMPT_STR = {
     "mistral": ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
-    "claude": ZS_KEYWORD_PROMPT_STR_FOR_CLAUDE,
+    "llama": ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
+    "qwen": ZS_KEYWORD_PROMPT_STR_FOR_MISTRAL,
 }
 
 ZS_SELF_CORRECT_PROMPT_STR = {
     "mistral": ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
-    "claude": ZS_SELF_CORRECT_PROMPT_STR_FOR_CLAUDE,
+    "llama": ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
+    "qwen": ZS_SELF_CORRECT_PROMPT_STR_FOR_MISTRAL,
 }
 
 
@@ -139,7 +143,6 @@ def get_prompt_fn(model_name, dataset, kw_strategy, kw_model_top_k, logits_thres
     elif kw_strategy == "sigext_topk":
         return SegExtTopK(model_name, dataset, top_k=kw_model_top_k, logits_threshold=logits_threshold)
     elif kw_strategy == "sigext_self_correct":
-      
         return SegExtTopK(
             model_name, 
             dataset, 
@@ -192,12 +195,15 @@ def run_inference(model_name, kw_strategy, kw_model_top_k, dataset, dataset_dir,
     logits_threshold = estimate_logits_threshold(str(dataset_dir.joinpath("validation.jsonl")), 75)
     logging.info(f"logits threshold is {logits_threshold}")
 
+    # CHANGE 3: Update model selection to support mistral/llama/qwen
     if model_name == "mistral":
         predict_one_eg_fn = predict_one_eg_mistral
-    elif model_name == "claude":
-        predict_one_eg_fn = predict_one_eg_claude_instant
+    elif model_name == "llama":
+        predict_one_eg_fn = predict_one_eg_llama
+    elif model_name == "qwen":
+        predict_one_eg_fn = predict_one_eg_qwen
     else:
-        raise ValueError(f"invalid model name {model_name}")
+        raise ValueError(f"invalid model name {model_name}. Choose from: mistral, llama, qwen")
 
     prompting_fn = get_prompt_fn(
         model_name,
@@ -207,14 +213,14 @@ def run_inference(model_name, kw_strategy, kw_model_top_k, dataset, dataset_dir,
         logits_threshold=logits_threshold,
     )
     assert not isinstance(prompting_fn, dict)
-    dataset_dir = pathlib.Path(dataset_dir)
 
     dataset_filename = str(dataset_dir.joinpath(f"{inference_on_split}.jsonl"))
     with jsonlines.open(dataset_filename) as f:
         inference_data = list(f)
 
-    with Pool(4) as p:
-        all_prompt = list(tqdm.tqdm(p.imap(prompting_fn, inference_data), total=len(inference_data)))
+    # CHANGE 4: Remove multiprocessing for prompt generation (optional but safer)
+    logging.info("Generating prompts...")
+    all_prompt = [prompting_fn(item) for item in tqdm.tqdm(inference_data, desc="Creating prompts")]
 
     for i in range(len(inference_data)):
         if isinstance(all_prompt[i], str):
@@ -223,9 +229,9 @@ def run_inference(model_name, kw_strategy, kw_model_top_k, dataset, dataset_dir,
             inference_data[i]["prompt_input"] = all_prompt[i][0]
             inference_data[i]["other_info"] = all_prompt[i][1]
 
-    with Pool(4) as p:
-        all_res = list(tqdm.tqdm(p.imap(predict_one_eg_fn, inference_data), total=len(inference_data)))
-    all_res = [item for item in all_res]
+    # CHANGE 5: Remove multiprocessing for inference (models are cached, sequential is fine)
+    logging.info(f"Running inference with {model_name}...")
+    all_res = [predict_one_eg_fn(item) for item in tqdm.tqdm(inference_data, desc="Generating summaries")]
 
     output_path = str(pathlib.Path(output_dir).expanduser())
     os.makedirs(output_path, exist_ok=True)
@@ -236,29 +242,48 @@ def run_inference(model_name, kw_strategy, kw_model_top_k, dataset, dataset_dir,
     with open(output_path + f"/{inference_on_split}_predictions.json", "w") as f:
         json.dump(all_res, f, indent=2)
 
+    logging.info("Computing metrics...")
     test_metrics = compute_rouge_score(inference_data, all_res)
+    
     with open(str(pathlib.Path(output_dir).joinpath(f"{inference_on_split}_metrics.json")), "w") as f:
         json.dump(test_metrics, f, indent=2)
+    
+    logging.info(f"Results: {test_metrics}")
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
     logging.getLogger("transformers.generation").setLevel(logging.ERROR)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", default="mistral", choices=["claude", "mistral"], help="llm name")
-   
-    parser.add_argument("--kw_model_top_k", default=20, type=int, help="keyword strategy.")
+    parser = argparse.ArgumentParser(description="Run SigExt inference with local models")
+    
+    # CHANGE 6: Update model choices
+    parser.add_argument(
+        "--model_name",
+        default="mistral",
+        choices=["mistral", "llama", "qwen"],
+        help="Local model to use for inference"
+    )
+    
+    parser.add_argument("--kw_model_top_k", default=20, type=int, help="Number of keywords to extract")
     parser.add_argument(
         "--dataset",
         required=True,
         choices=["arxiv", "pubmed", "cnn", "samsum", "meetingbank"],
-        help="Select from supported datasets.",
+        help="Dataset to run inference on",
     )
-    parser.add_argument("--dataset_dir", required=True, type=str, help="directory of train and validation data.")
-    parser.add_argument("--output_dir", required=True, type=str, help="directory to save experiment.")
-    parser.add_argument("--inference_on_split", default="test", type=str, help="split_to_run_inference")
-    parser.add_argument("--kw_strategy", choices=["disable", "sigext_topk", "sigext_self_correct"], help="keyword strategy.")
+    parser.add_argument("--dataset_dir", required=True, type=str, help="Directory of train and validation data")
+    parser.add_argument("--output_dir", required=True, type=str, help="Directory to save results")
+    parser.add_argument("--inference_on_split", default="test", type=str, help="Split to run inference on")
+    parser.add_argument(
+        "--kw_strategy",
+        default="sigext_topk",
+        choices=["disable", "sigext_topk", "sigext_self_correct"],
+        help="Keyword extraction strategy"
+    )
 
     args = parser.parse_args()
 

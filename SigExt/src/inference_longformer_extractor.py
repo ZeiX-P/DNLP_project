@@ -40,6 +40,38 @@ MODELS = {
         "use_explicit_mask": True,
         "num_random_blocks": 3, 
     },
+    "bigbird_large_r2b64": {
+        "name": "google/bigbird-roberta-large",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 64,
+        "use_explicit_mask": True,
+        "num_random_blocks": 2
+    },
+    "bigbird_large_r5b64": {
+        "name": "google/bigbird-roberta-large",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 64,
+        "use_explicit_mask": True,
+        "num_random_blocks": 5
+    },
+    "bigbird_large_r3b32": {
+        "name": "google/bigbird-roberta-large",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 32,
+        "use_explicit_mask": True,
+        "num_random_blocks": 3
+    },
+    "bigbird_large_r3b128": {
+        "name": "google/bigbird-roberta-large",
+        "max_length": 4096,
+        "needs_block_padding": True,
+        "block_size": 128,
+        "use_explicit_mask": True,
+        "num_random_blocks": 3
+    },
     "modernbert_large": {
         "name": "answerdotai/ModernBERT-large",
         "max_length": 8192,
@@ -114,12 +146,14 @@ def main():
     model_config = MODELS[args.model]
     base_model = model_config["name"]
     base_model_max_length = model_config["max_length"]
+    needs_block_padding = model_config.get("needs_block_padding", False)
+    block_size = model_config.get("block_size", 64)
 
     best_checkpoint = find_best_checkpoint(args.checkpoint_dir)
     logging.info(f"Using checkpoint: {best_checkpoint}")
     logging.info(f"Using model: {base_model}")
     
-    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, base_model=base_model)
+    model = KeywordExtractorClf.load_from_checkpoint(best_checkpoint, model_config=model_config)
 
     trainer = pl.Trainer(devices=1, accelerator="auto")
 
@@ -141,6 +175,8 @@ def main():
             example_kw_hit_threshold=0,
             base_model_max_length=base_model_max_length,
             hide_gt=True,
+            needs_block_padding=needs_block_padding,
+            block_size=block_size,
         )
         dataloader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=0)
         predicts = trainer.predict(model, dataloaders=dataloader)

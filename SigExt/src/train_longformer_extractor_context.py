@@ -16,7 +16,6 @@ import transformers
 from rouge_score import rouge_scorer
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoModelForTokenClassification, AutoTokenizer, AutoConfig
-from transformers import BitsAndBytesConfig
 
 
 MODELS = {
@@ -225,16 +224,11 @@ class KeywordExtractorClf(pl.LightningModule):
                 config.block_size = model_config['block_size']
             if 'num_random_blocks' in model_config:
                 config.num_random_blocks = model_config['num_random_blocks']
+            config.attention_type = "block_sparse"
             logging.info(f"BigBird config: block_size={config.block_size}, "
                         f"num_random_blocks={config.num_random_blocks}")
 
-        
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",  
-            bnb_4bit_compute_dtype=torch.bfloat16, 
-            bnb_4bit_use_double_quant=True
-        )
+    
    
         attn_impl = "sdpa" if "ModernBERT" in model_config['name'] else None
 
@@ -242,7 +236,7 @@ class KeywordExtractorClf(pl.LightningModule):
             model_config['name'], 
             config=config,
             trust_remote_code=True,
-            quantization_config=quantization_config,
+            torch_dtype=torch.bfloat16,
             attn_implementation=attn_impl 
         )
         
@@ -281,10 +275,6 @@ class KeywordExtractorClf(pl.LightningModule):
                     current_len = 0
 
         return {"id": int(idx[0]), "score": score_and_label}
-
-    def on_train_batch_end(self, outputs, batch, batch_idx):
-   
-        torch.cuda.empty_cache()
 
     def training_step(self, batch, batch_idx):
         x, y, _ = batch
@@ -378,7 +368,7 @@ class KeywordExtractorClf(pl.LightningModule):
      
         optimizer = torch.optim.AdamW(
             self.parameters(),
-            lr=5e-4,
+            lr=1e-4,
             weight_decay=0.01
         )
         
@@ -431,7 +421,7 @@ def main():
         needs_block_padding=model_config.get("needs_block_padding", False), 
         block_size=model_config.get("block_size", 64)                       
     )
-    val_loader = DataLoader(val_set, batch_size=1, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=1, shuffle=False)
 
 
     if args.load_ckpt:

@@ -1,118 +1,154 @@
-import json
 import logging
-import time
-import traceback
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-import boto3.session as boto3_session
-import botocore.config
+_models = {}
+_tokenizers = {}
+
+# Model config
+MODEL_CONFIGS = {
+    "mistral": {
+        "name": "mistralai/Mistral-7B-Instruct-v0.2",
+        "trust_remote_code": False,
+    },
+    "llama": {
+        "name": "meta-llama/Llama-2-7b-chat-hf",
+        "trust_remote_code": False,
+    },
+    "qwen": {
+        "name": "Qwen/Qwen2.5-7B-Instruct",
+        "trust_remote_code": True,
+    },
+}
 
 
-def extract_xml_tag(generation: str, tag):
-    begin = generation.rfind(f"<{tag}>")
-    if begin == -1:
-        return
-    begin = begin + len(f"<{tag}>")
-    end = generation.rfind(f"</{tag}>", begin)
-    if end == -1:
-        return
-    value = generation[begin:end].strip()
-    return value
+def load_model(model_type):
+    global _tokenizers, _models
+    
+    if model_type not in _models:
+        if model_type not in MODEL_CONFIGS:
+            raise ValueError(f"Unknown model type: {model_type}. Choose from {list(MODEL_CONFIGS.keys())}")
+        
+        config = MODEL_CONFIGS[model_type]
+        logging.info(f"Loading {model_type} model: {config['name']}...")
+        
+        # Load tokenizer
+        _tokenizers[model_type] = AutoTokenizer.from_pretrained(
+            config["name"],
+            trust_remote_code=config["trust_remote_code"]
+        )
+        
+        # Set pad token if not present
+        if _tokenizers[model_type].pad_token is None:
+            _tokenizers[model_type].pad_token = _tokenizers[model_type].eos_token
+        
+        # Load model
+        _models[model_type] = AutoModelForCausalLM.from_pretrained(
+            config["name"],
+            torch_dtype=torch.float16,
+            device_map="auto",
+            trust_remote_code=config["trust_remote_code"]
+        )
+        _models[model_type].eval()
+        
+        logging.info(f"{model_type} model loaded successfully.")
+    
+    return _tokenizers[model_type], _models[model_type]
+
+
+def _generate_with_model(model_type, prompt, **gen_kwargs):
+    tokenizer, model = load_model(model_type)
+    
+    # Format using chat template
+    messages = [{"role": "user", "content": prompt}]
+    
+    try:
+        encoded = tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt",
+            add_generation_prompt=True,
+            truncation=True,
+            max_length=4096
+        )
+    except Exception as e:
+        # Fallback if apply_chat_template fails
+        logging.warning(f"Chat template failed for {model_type}, using direct tokenization: {e}")
+        encoded = tokenizer(
+            prompt,
+            return_tensors="pt",
+            truncation=True,
+            max_length=4096
+        ).input_ids
+    
+    encoded = encoded.to(model.device)
+    
+    # Default generation parameters
+    default_kwargs = {
+        "max_new_tokens": 512,
+        "temperature": 1.0,
+        "top_p": 0.8,
+        "top_k": 10,
+        "do_sample": True,
+        "pad_token_id": tokenizer.pad_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+    }
+    
+    # Override with any provided kwargs
+    default_kwargs.update(gen_kwargs)
+    
+    with torch.no_grad():
+        output = model.generate(
+            encoded,
+            **default_kwargs
+        )
+    
+    # Decode only the generated part
+    response = tokenizer.decode(
+        output[0][encoded.shape[1]:],
+        skip_special_tokens=True
+    )
+    
+    return response.strip()
 
 
 def predict_one_eg_mistral(x):
-    current_session = boto3_session.Session()
-    bedrock = current_session.client(
-        service_name="bedrock-runtime",
-        region_name="us-west-2",
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-        config=botocore.config.Config(
-            read_timeout=120,  # corresponds to inference time limit set for Bedrock
-            connect_timeout=120,
-            retries={
-                "max_attempts": 5,
-            },
-        ),
-    )
-    api_template = {
-        "modelId": "mistral.mistral-7b-instruct-v0:2",
-        "contentType": "application/json",
-        "accept": "*/*",
-        "body": "",
-    }
+    try:
+        prompt = x["prompt_input"]
+        response = _generate_with_model("mistral", prompt)
+        logging.info(f"Mistral generated: {response[:100]}...")
+        return response
+    except Exception as e:
+        logging.error(f"Error in Mistral inference: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
 
-    body = {"max_tokens": 512, "temperature": 1.0, "top_p": 0.8, "top_k": 10, "prompt": x["prompt_input"]}
 
-    api_template["body"] = json.dumps(body)
+def predict_one_eg_llama(x):
+    try:
+        prompt = x["prompt_input"]
+        response = _generate_with_model("llama", prompt)
+        logging.info(f"Llama generated: {response[:100]}...")
+        return response
+    except Exception as e:
+        logging.error(f"Error in Llama inference: {e}")
+        import traceback
+        traceback.print_exc()
+        return ""
 
-    success = False
-    response = None
-    for i in range(10):
-        try:
-            response = bedrock.invoke_model(**api_template)
-            success = True
-            break
-        except:
-            traceback.print_exc()
-            time.sleep(5)
 
-    if success:
-        response_body = json.loads(response.get("body").read())
-        logging.info(response_body)
-        return response_body["outputs"][0]["text"]
-    else:
+def predict_one_eg_qwen(x):
+    try:
+        prompt = x["prompt_input"]
+        response = _generate_with_model("qwen", prompt)
+        logging.info(f"Qwen generated: {response[:100]}...")
+        return response
+    except Exception as e:
+        logging.error(f"Error in Qwen inference: {e}")
+        import traceback
+        traceback.print_exc()
         return ""
 
 
 def predict_one_eg_claude_instant(x):
-    current_session = boto3_session.Session()
-    bedrock = current_session.client(
-        service_name="bedrock-runtime",
-        region_name="us-west-2",
-        endpoint_url="https://bedrock-runtime.us-west-2.amazonaws.com",
-        config=botocore.config.Config(
-            read_timeout=120,  # corresponds to inference time limit set for Bedrock
-            connect_timeout=120,
-            retries={
-                "max_attempts": 5,
-            },
-        ),
-    )
-    api_template = {
-        "modelId": "anthropic.claude-instant-v1",
-        "contentType": "application/json",
-        "accept": "*/*",
-        "body": "",
-    }
-
-    body = {
-        "max_tokens_to_sample": 512,
-        "stop_sequences": ["\n\nHuman:"],
-        "anthropic_version": "bedrock-2023-05-31",
-        "temperature": 1.0,
-        "top_p": 0.8,
-        "top_k": 10,
-        "prompt": "Human: {prompt}\nWrite your summary in <summary> XML tags.\n\nAssistant: ".format(
-            prompt=x["prompt_input"].strip()
-        ),
-    }
-
-    api_template["body"] = json.dumps(body)
-
-    success = False
-    response = None
-    for i in range(10):
-        try:
-            response = bedrock.invoke_model(**api_template)
-            success = True
-            break
-        except:
-            traceback.print_exc()
-            time.sleep(20)
-
-    if success:
-        response_body = json.loads(response.get("body").read())
-        summary = extract_xml_tag(response_body["completion"], "summary")
-        logging.info(summary or response_body["completion"])
-        return summary or response_body["completion"]
-    else:
-        return ""
+    raise NotImplementedError("Claude not available - use Mistral, Llama, or Qwen instead")
