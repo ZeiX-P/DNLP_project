@@ -9,7 +9,7 @@ from typing import List, Dict
 # and the style of instruction-following it uses.
 # -------------------------------------------------------------------------
 MODEL_REGISTRY = {
-    "mistral": {
+    "local_mistral": {
         "hf_name": "mistralai/Mistral-7B-Instruct-v0.2",
         "instruct_style": "mistral",
     },
@@ -20,11 +20,7 @@ MODEL_REGISTRY = {
     "llama": {
         "hf_name": "meta-llama/Meta-Llama-3.1-8B-Instruct",
         "instruct_style": "llama",
-    },
-    #"deepseek": {
-    #    "hf_name": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-    #    "instruct_style": "chatml",
-    #}, run a test and then discarded
+    }
 }
 
 ACTIVE_MODEL_NAME = None
@@ -90,13 +86,16 @@ def predict_one_local(x, model_name=None):
         load_llm_model(model_name)
 
     prompt_text = x["prompt_input"]
+    print("PROMPT CHARS:", len(prompt_text))
+    print("TEXT CHARS:", len(x.get("trunc_input", "")))
 
     inputs = LLM_TOKENIZER(prompt_text, return_tensors="pt", add_special_tokens=False)
-
+    print("INPUT TOKENS:", inputs["input_ids"].shape[-1])
+    
     model_inputs = inputs.to(LLM_MODEL.device)
 
     generated_ids = LLM_MODEL.generate(
-        **inputs,
+        **model_inputs,
         max_new_tokens=512,
         temperature=0.7,
         top_p=0.9,
@@ -104,14 +103,26 @@ def predict_one_local(x, model_name=None):
         eos_token_id=LLM_TOKENIZER.eos_token_id,
     )
 
-    decoded_output = LLM_TOKENIZER.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    # Extract only the response part
+    instruct_style = MODEL_REGISTRY[model_name]["instruct_style"]
 
-    # Extract only the response part, assuming instruction style uses [/INST] delimiter
-    response_parts = decoded_output.split('[/INST]')
-    if len(response_parts) > 1:
-        response_text = response_parts[-1].strip()
-    else:
-        # Fallback if tag not found (rare for Mistral-Instruct)
-        response_text = decoded_output.strip()
+    if instruct_style == "mistral":
+        # Decode mantaining special tokens
+        decoded_output = LLM_TOKENIZER.batch_decode(generated_ids, skip_special_tokens=False)[0]
+        
+        # Split to remove prompt
+        if "[/INST]" in decoded_output:
+            response_text = decoded_output.split('[/INST]')[-1].strip()
+        else:
+            response_text = decoded_output.strip()
+            
+        # Clean special tokens
+        response_text = response_text.replace("</s>", "").strip()
+
+    elif instruct_style in ["llama", "chatml", "gemma"]:
+        response_text = LLM_TOKENIZER.decode(
+            generated_ids[0][inputs["input_ids"].shape[-1]:],
+            skip_special_tokens=True
+        ).strip()
 
     return response_text
