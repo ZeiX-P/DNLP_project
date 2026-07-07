@@ -165,44 +165,6 @@ ZS_KEYWORD_PROMPT_STR_FOR_LLAMA = {
     )
 }
 
-ZS_COT_PROMPT_FOR_MISTRAL_1 = {
-    "cnn": """<s>[INST]You are an expert news analyst.
-        You will be given:
-        - a news article
-        - a list of key phrases extracted from the article
-        Your task is to produce a high-quality news summary by reasoning step by step.
-        Follow these instructions:
-        1) First, think step by step in natural language:
-           - Identify the main actors
-           - Identify the main events
-           - Identify where and when they happened
-           - Identify causes and consequences
-           - Identify minor details that can be omitted
-        2) When reasoning, refer to the key phrases when they are relevant.
-        3) Briefly explain WHY each identified element is important to the overall story.
-        4) After the reasoning, write the final summary.
-        STRICT RULES FOR THE FINAL SUMMARY:
-        - It MUST be based ONLY on the article.
-        - It MUST be exactly 2 sentences.
-        - It MUST NOT exceed 60 words in total.
-        - It MUST be neutral and factual.
-        - Try to include some key phrases naturally, but do NOT force all of them.
-
-        Article:
-        <text>
-        
-        Key phrases:
-        <keywords>
-        
-        Write your answer in two parts:
-        
-        Reasoning:
-        <step-by-step chain-of-thought>
-        
-        Final summary:
-        <exactly two sentences here>[/INST]"""
-}
-
 ZS_COT_KEYWORD_PROMPT_STR_FOR_MISTRAL = {
     "cnn": """<s>[INST]
         You are an expert news analyst and summarizer trained to produce CNN/DailyMail-style highlights.
