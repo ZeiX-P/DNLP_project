@@ -18,6 +18,8 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoModelForTokenClassification, AutoTokenizer, AutoConfig
 from transformers import BitsAndBytesConfig
 
+from peft import get_peft_model, LoraConfig, TaskType
+import bitsandbytes as bnb  # Import this for the optimizer
 
 MODELS = {
     "longformer": {
@@ -182,37 +184,26 @@ class KeywordExtractorClf(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.model_config = model_config
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_config['name'], trust_remote_code=True)
         
         logging.info(f"Initializing Model: {model_config['name']}")
 
         config = AutoConfig.from_pretrained(model_config['name'], trust_remote_code=True)
         config.num_labels = 2
-        
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",  
-            bnb_4bit_compute_dtype=torch.bfloat16, 
-            bnb_4bit_use_double_quant=True
-        )
-   
-        attn_impl = "sdpa" if "ModernBERT" in model_config['name'] else None
 
         self.clf = AutoModelForTokenClassification.from_pretrained(
-            model_config['name'], 
+            model_config['name'],
             config=config,
-            trust_remote_code=True,
-            quantization_config=quantization_config,
-            attn_implementation=attn_impl 
+            trust_remote_code=True
         )
-        
+
         self.clf.gradient_checkpointing_enable()
-        
-  
-        if hasattr(self.clf.config, "use_cache"):
-            self.clf.config.use_cache = False
+
+       
             
         self.validation_step_outputs = []
-
+        
     def predict_step(self, batch, batch_idx):
         x, y, idx = batch
         assert x.size(0) == 1
@@ -246,6 +237,7 @@ class KeywordExtractorClf(pl.LightningModule):
         torch.cuda.empty_cache()
 
     def training_step(self, batch, batch_idx):
+        
         x, y, _ = batch
         assert x.size(0) == 1
         logits = self.clf(x)[0]
@@ -255,6 +247,11 @@ class KeywordExtractorClf(pl.LightningModule):
         
         loss = F.cross_entropy(logits[0], y[0], reduction="sum", weight=loss_weight)
         self.log("train/loss", loss, prog_bar=True)
+     
+        x, y, _ = batch
+        assert x.size(0) == 1
+        
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -334,19 +331,19 @@ class KeywordExtractorClf(pl.LightningModule):
         self.validation_step_outputs.clear()
 
     def configure_optimizers(self):
-     
+        
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=5e-4,
             weight_decay=0.01
         )
         
+        
         scheduler = transformers.get_linear_schedule_with_warmup(
             optimizer, num_training_steps=self.trainer.estimated_stepping_batches, num_warmup_steps=100
         )
         scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
         return [optimizer], [scheduler]
-
 
 def main():
     logging.basicConfig(level=logging.INFO)
@@ -414,7 +411,7 @@ def main():
         strategy="auto",
         accelerator="auto",
         devices=1,
-        precision="bf16-true", 
+        precision="bf16", 
         log_every_n_steps=5,
         accumulate_grad_batches=args.accumulate_grad_batches,
         gradient_clip_val=1.0,
