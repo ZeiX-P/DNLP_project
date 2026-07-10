@@ -14,7 +14,7 @@ We used this codebase as our foundational baseline and extended its functionalit
 
 ### 2. Branch: `[different-models]` [[Click here to view this branch](https://github.com/ZeiX-P/DNLP_project/tree/different-models)]
 This branch contains the first project variant, focusing on:
-* **information extraction module** used for input conditioning, replacing the original extractor with alternative encoder-based models.
+* **Information extraction module** used for input conditioning, replacing the original extractor with alternative encoder-based models.
 
 ### 3. Branch: `[llm-models+cot]` [[Click here to view this branch](https://github.com/ZeiX-P/DNLP_project/tree/llm-models%2Bcot)]
 This branch contains the second project variant, focusing on:
