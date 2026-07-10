@@ -16,6 +16,6 @@ We used this codebase as our foundational baseline and extended its functionalit
 This branch contains the first project variant, focusing on:
 * **information extraction module** used for input conditioning, replacing the original extractor with alternative encoder-based models.
 
-### 3. Branch: `[llm-models+cot]` [https://github.com/ZeiX-P/DNLP_project/tree/llm-models%2Bcot]
+### 3. Branch: `[llm-models+cot]` [[Click here to view this branch](https://github.com/ZeiX-P/DNLP_project/tree/llm-models%2Bcot)]
 This branch contains the second project variant, focusing on:
 * **Prompting strategy**, comparing baseline prompting with progressively more structured reasoning-based approaches, including Chain-of-Thought and entity-relation guided prompting.
